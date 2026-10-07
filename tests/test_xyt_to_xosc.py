@@ -1,9 +1,10 @@
 import xml.etree.ElementTree as ET
 
 import pandas as pd
+import pytest
 
 from project_rosetta.cli.xyt2xosc import main
-from project_rosetta.trajectory_conversions.xyt_to_xosc import xyt_files_to_xosc
+from project_rosetta.trajectory_conversions.xyt_to_xosc import read_xyt, xyt_files_to_xosc
 
 
 def test_xyt_files_to_xosc_writes_trajectory_replay(tmp_path):
@@ -67,3 +68,34 @@ def test_xyt_files_to_xosc_samples_car_models_with_replacement(tmp_path):
         "car_yellow.osgb",
         "car_white.osgb",
     ]
+
+
+def test_xyt_files_to_xosc_rejects_row_missing_time(tmp_path):
+    """Test that a row without a time stops conversion before any output is written."""
+    xyt_path = tmp_path / "subject.xyt"
+    output_path = tmp_path / "replay.xosc"
+    xyt_path.write_text("0 0 0\n1 0 0,5\n2 0\n")
+
+    with pytest.raises(ValueError, match=r"subject\.xyt, line 3: expected 3 numeric values"):
+        xyt_files_to_xosc([xyt_path], output_path)
+
+    assert not output_path.exists()
+
+
+def test_read_xyt_reports_missing_value_on_first_row(tmp_path):
+    """Test that the reported line number counts blank lines and points at the first row."""
+    xyt_path = tmp_path / "subject.xyt"
+    xyt_path.write_text("\n0 0\n1 0 0,5\n")
+
+    expected = r"line 2: expected 3 numeric values \(x y time\), found 2"
+    with pytest.raises(ValueError, match=expected):
+        read_xyt(xyt_path)
+
+
+def test_read_xyt_rejects_non_numeric_value(tmp_path):
+    """Test that a dot-decimal value is reported instead of failing inside pandas."""
+    xyt_path = tmp_path / "subject.xyt"
+    xyt_path.write_text("0 0 0\n1.5 0 0,5\n")
+
+    with pytest.raises(ValueError, match=r"line 2: x value '1\.5' is not a number"):
+        read_xyt(xyt_path)
