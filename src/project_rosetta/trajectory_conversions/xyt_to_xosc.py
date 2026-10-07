@@ -1,3 +1,4 @@
+import re
 from pathlib import Path
 
 import numpy as np
@@ -5,6 +6,8 @@ import pandas as pd
 from scenariogeneration import xosc
 
 CAR_MODELS = ["car_white.osgb", "car_blue.osgb", "car_red.osgb", "car_yellow.osgb"]
+XYT_COLUMNS = ["x", "y", "time"]
+XYT_NUMBER = re.compile(r"[+-]?(\d+(,\d*)?|,\d+)([eE][+-]?\d+)?")
 
 
 def read_xyt(path: Path) -> pd.DataFrame:
@@ -15,10 +18,37 @@ def read_xyt(path: Path) -> pd.DataFrame:
         DataFrame with x, y, time, and yaw.
 
     """
-    df = pd.read_csv(Path(path), sep=r"\s+", header=None, names=["x", "y", "time"], decimal=",")
+    _validate_xyt_rows(Path(path))
+    df = pd.read_csv(Path(path), sep=r"\s+", header=None, names=XYT_COLUMNS, decimal=",")
     df["time"] -= df["time"].iloc[0]
     df["yaw"] = _yaw(df)
     return df
+
+
+def _validate_xyt_rows(path: Path) -> None:
+    """
+    Check that every non-blank row holds exactly x, y, and time as comma-decimal numbers.
+
+    Raises:
+        ValueError: If a row has the wrong number of values or a non-numeric value.
+
+    """
+    with path.open(encoding="utf-8") as file:
+        for line_number, line in enumerate(file, start=1):
+            values = line.split()
+            if not values:
+                continue
+            if len(values) != len(XYT_COLUMNS):
+                raise ValueError(
+                    f"{path}, line {line_number}: expected 3 numeric values (x y time), "
+                    f"found {len(values)}"
+                )
+            for name, value in zip(XYT_COLUMNS, values):
+                if not XYT_NUMBER.fullmatch(value):
+                    raise ValueError(
+                        f"{path}, line {line_number}: {name} value {value!r} is not a number "
+                        "(expected comma decimals, e.g. 0,5)"
+                    )
 
 
 def xyt_files_to_xosc(xyt_paths: list[Path], output_path: Path) -> Path:
